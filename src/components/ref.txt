@@ -1,0 +1,273 @@
+three boxes
+---------------------------------------------------
+
+import React, { useEffect, useRef } from 'react';
+import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+
+const ThreeBoxes = () => {
+  const sceneRef = useRef(null);
+  const workerRef = useRef(null);
+
+  useEffect(() => {
+    // Scene setup
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    sceneRef.current.appendChild(renderer.domElement);
+
+    // Orbit controls
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.25;
+    controls.screenSpacePanning = false;
+
+    // Lighting
+    const ambientLight = new THREE.AmbientLight(0x404040, 1.5);
+    scene.add(ambientLight);
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+    directionalLight.position.set(5, 10, 7.5).normalize();
+    scene.add(directionalLight);
+
+    // Camera positioning
+    camera.position.set(5, 2, 10);
+    controls.update();
+
+    // Frustum for culling
+    const frustum = new THREE.Frustum();
+    const projScreenMatrix = new THREE.Matrix4();
+
+    // Create a web worker
+    workerRef.current = new Worker(new URL('../components/boxWorker.js', import.meta.url));
+
+    // Box creation function
+    const createBox = (x, y, z, priority) => {
+      const geometry = new THREE.BoxGeometry(1, 1, 1);
+      const material = new THREE.MeshStandardMaterial({ color: getPriorityColor(priority) });
+      const box = new THREE.Mesh(geometry, material);
+      box.position.set(x, y, z);
+      box.userData.priority = priority;
+      return box;
+    };
+
+    // Function to get color based on priority
+    const getPriorityColor = (priority) => {
+      switch(priority) {
+        case 1: return 0xff0000; // Red
+        case 2: return 0x00ff00; // Green
+        case 3: return 0x0000ff; // Blue
+        default: return 0xffffff; // White
+      }
+    };
+
+    // Generate box data for 20 boxes
+    const boxData = [];
+    for (let i = 0; i < 20; i++) {
+      const x = Math.floor(i / 5) - 2;
+      const y = 0;
+      const z = (i % 5) - 2;
+      
+      const distance = Math.sqrt(x*x + y*y + z*z);
+      let priority;
+      if (distance <= 1) priority = 1;
+      else if (distance <= 2) priority = 2;
+      else priority = 3;
+      
+      boxData.push({ x, y, z, priority });
+    }
+
+    // Send initial box data to worker
+    workerRef.current.postMessage({ type: 'init', boxData });
+
+   
+    // Handle messages from worker
+    workerRef.current.onmessage = (event) => {
+        const { type, boxes, message } = event.data;
+        if (type === 'error') {
+          console.error('Error from worker:', message);
+        } else if (type === 'updateBoxes') {
+          // Remove boxes that are no longer visible or priority 1
+          scene.children.forEach(child => {
+            if (child.isMesh) {
+              const boxData = boxes.find(b => b.x === child.position.x && b.y === child.position.y && b.z === child.position.z);
+              if (!boxData) {
+                scene.remove(child);
+                child.geometry.dispose();
+                child.material.dispose();
+              } else if (boxData.priority !== child.userData.priority) {
+                // Update priority if changed
+                child.userData.priority = boxData.priority;
+                child.material.color.setHex(getPriorityColor(boxData.priority));
+              }
+            }
+          });
+
+        // Add or update visible boxes and priority 1 boxes
+        boxes.forEach(({ x, y, z, priority }) => {
+          let box = scene.getObjectByName(`box_${x}_${y}_${z}`);
+          if (!box) {
+            box = createBox(x, y, z, priority);
+            box.name = `box_${x}_${y}_${z}`;
+            scene.add(box);
+          }
+        });
+      } else if (type === 'unloadBoxes') {
+        boxes.forEach(({ x, y, z }) => {
+          const box = scene.getObjectByName(`box_${x}_${y}_${z}`);
+          if (box) {
+            scene.remove(box);
+            box.geometry.dispose();
+            box.material.dispose();
+          }
+        });
+      }else {
+        console.warn('Unknown message type from worker:', type);
+      }
+    };
+
+    // Animation loop
+    const animate = function () {
+      requestAnimationFrame(animate);
+
+      // Update frustum
+      projScreenMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+      frustum.setFromProjectionMatrix(projScreenMatrix);
+
+      // Check visibility and update worker
+      const visibleBoxes = [];
+      scene.traverse((object) => {
+        if (object.isMesh) {
+          if (frustum.containsPoint(object.position)) {
+            visibleBoxes.push({
+              x: object.position.x,
+              y: object.position.y,
+              z: object.position.z,
+              priority: object.userData.priority
+            });
+          }
+          object.rotation.x += 0.01;
+          object.rotation.y += 0.01;
+        }
+      });
+
+      workerRef.current.postMessage({ 
+        type: 'updateVisibility', 
+        visibleBoxes, 
+        cameraPosition: { 
+          x: camera.position.x, 
+          y: camera.position.y, 
+          z: camera.position.z 
+        } 
+      });
+
+      controls.update();
+      renderer.render(scene, camera);
+    };
+
+    animate();
+
+    // Handle window resizing
+    const onWindowResize = () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    };
+
+    window.addEventListener('resize', onWindowResize);
+
+    return () => {
+      // Clean up on component unmount
+      window.removeEventListener('resize', onWindowResize);
+      scene.traverse((object) => {
+        if (object.isMesh) {
+          object.geometry.dispose();
+          object.material.dispose();
+        }
+      });
+      renderer.dispose();
+      sceneRef.current.removeChild(renderer.domElement);
+      workerRef.current.terminate();
+    };
+  }, []);
+
+  return <div ref={sceneRef} />;
+};
+
+export default ThreeBoxes;
+
+------------------------------------------------------
+/* eslint-disable no-restricted-globals */
+let boxData = [];
+let visibleBoxes = [];
+let cameraPosition = { x: 0, y: 0, z: 0 };
+
+self.onmessage = (event) => {
+  const { type, boxData: newBoxData, visibleBoxes: newVisibleBoxes, cameraPosition: newCameraPosition } = event.data;
+
+  try {
+    if (type === 'init') {
+      if (!Array.isArray(newBoxData)) {
+        throw new Error('Invalid boxData: expected an array');
+      }
+      boxData = newBoxData;
+      console.log('Worker initialized with', boxData.length, 'boxes');
+    } else if (type === 'updateVisibility') {
+      if (!Array.isArray(newVisibleBoxes)) {
+        throw new Error('Invalid visibleBoxes: expected an array');
+      }
+      visibleBoxes = newVisibleBoxes;
+      cameraPosition = newCameraPosition;
+      updatePriorities();
+    } else {
+      throw new Error('Unknown message type: ' + type);
+    }
+  } catch (error) {
+    console.error('Error in worker:', error);
+    self.postMessage({ type: 'error', message: error.message });
+  }
+};
+
+function updatePriorities() {
+  if (!Array.isArray(boxData) || boxData.length === 0) {
+    console.warn('boxData is empty or not an array. Skipping priority update.');
+    return;
+  }
+
+  const priorityBoxes = boxData.filter(box => {
+    if (!box || typeof box.x !== 'number' || typeof box.y !== 'number' || typeof box.z !== 'number') {
+      console.warn('Invalid box data:', box);
+      return false;
+    }
+
+    const distance = Math.sqrt(
+      Math.pow(box.x - cameraPosition.x, 2) +
+      Math.pow(box.y - cameraPosition.y, 2) +
+      Math.pow(box.z - cameraPosition.z, 2)
+    );
+
+    // Include boxes inside the frustum
+    if (visibleBoxes.some(vb => vb.x === box.x && vb.y === box.y && vb.z === box.z)) {
+      return true;
+    }
+
+    // Include priority 1 boxes
+    if (box.priority === 1) {
+      return true;
+    }
+
+    // Include nearby priority 2 and 3 boxes
+    if (box.priority === 2 && distance <= 5) {
+      return true;
+    }
+    if (box.priority === 3 && distance <= 3) {
+      return true;
+    }
+
+    return false;
+  });
+
+  self.postMessage({ type: 'updateBoxes', boxes: priorityBoxes });
+}
+
+console.log('Box worker started');
