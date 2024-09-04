@@ -7,6 +7,7 @@ import FBXViewer from './components/NewFbxFileLoader';
 import Cubes from './Custom/Cubes';
 import SceneCanvas from './Largecomponent/SceneCanvas';
 import SceneManager from './Largecomponent/SceneManager';
+import FinalLargeSceneModel from './components/FinalLargeSceneModel'
 
 function App() {
   return (
@@ -16,7 +17,8 @@ function App() {
       {/* <CompressedFbx/> */}
       {/* <FBXViewer/> */}
       {/* <SceneManager/> */}
-      <Cubes/>
+      {/* <Cubes/> */}
+      <FinalLargeSceneModel/>
      
     </div>
   );
