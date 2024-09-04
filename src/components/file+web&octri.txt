@@ -1,0 +1,473 @@
+import React, { useEffect, useRef, useState } from 'react';
+import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader';
+
+// Custom Octree implementation
+class Octree {
+  constructor(center, size) {
+    this.center = center;
+    this.size = size;
+    this.objects = [];
+    this.children = null;
+  }
+
+  add(object) {
+    if (!this.contains(object.position)) return false;
+    
+    if (this.children === null) {
+      this.objects.push(object);
+      if (this.objects.length > 8 && this.size > 2) {
+        this.subdivide();
+      }
+    } else {
+      for (let child of this.children) {
+        if (child.add(object)) break;
+      }
+    }
+    return true;
+  }
+
+  remove(object) {
+    if (this.children === null) {
+      const index = this.objects.indexOf(object);
+      if (index !== -1) {
+        this.objects.splice(index, 1);
+        return true;
+      }
+    } else {
+      for (let child of this.children) {
+        if (child.remove(object)) return true;
+      }
+    }
+    return false;
+  }
+
+  subdivide() {
+    this.children = [];
+    for (let i = 0; i < 8; i++) {
+      const newSize = this.size / 2;
+      const newCenter = new THREE.Vector3(
+        this.center.x + (i & 1 ? newSize / 2 : -newSize / 2),
+        this.center.y + (i & 2 ? newSize / 2 : -newSize / 2),
+        this.center.z + (i & 4 ? newSize / 2 : -newSize / 2)
+      );
+      this.children.push(new Octree(newCenter, newSize));
+    }
+
+    for (let object of this.objects) {
+      for (let child of this.children) {
+        if (child.add(object)) break;
+      }
+    }
+    this.objects = [];
+  }
+
+  contains(point) {
+    return Math.abs(point.x - this.center.x) <= this.size / 2 &&
+           Math.abs(point.y - this.center.y) <= this.size / 2 &&
+           Math.abs(point.z - this.center.z) <= this.size / 2;
+  }
+
+  intersectRay(ray, intersects = []) {
+    if (!this.intersectsRay(ray)) return intersects;
+
+    if (this.children === null) {
+      for (let object of this.objects) {
+        if (ray.intersectBox(new THREE.Box3().setFromObject(object), new THREE.Vector3())) {
+          intersects.push(object);
+        }
+      }
+    } else {
+      for (let child of this.children) {
+        child.intersectRay(ray, intersects);
+      }
+    }
+    return intersects;
+  }
+
+  intersectsRay(ray) {
+    const bbox = new THREE.Box3().setFromCenterAndSize(this.center, new THREE.Vector3(this.size, this.size, this.size));
+    return ray.intersectsBox(bbox);
+  }
+}
+
+const ThreeBoxes = () => {
+  const sceneRef = useRef(null);
+  const workerRef = useRef(null);
+  const octreeRef = useRef(null);
+  const [file, setFile] = useState(null);
+  let justLoadedCount = 0;
+  let unloadedCount = 0;
+  const mouse = useRef({ x: 0, y: 0 });
+  const isMouseDown = useRef(false);
+  const isPanning = useRef(false);
+  const isZooming = useRef(false);
+  const lastMouseMovement = useRef({ x: 0, y: 0 });
+  const [flySpeed, setFlySpeed] = useState(0.1);
+  const [flyRotationSpeed, setFlyRotationSpeed] = useState(0.1);
+
+  useEffect(() => {
+   // Scene setup
+   const scene = new THREE.Scene();
+   const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+   const renderer = new THREE.WebGLRenderer();
+   renderer.setSize(window.innerWidth, window.innerHeight);
+   renderer.setClearColor(0xfff000);
+   sceneRef.current.appendChild(renderer.domElement);
+
+   // Orbit controls
+   const controls = new OrbitControls(camera, renderer.domElement);
+   controls.enableDamping = true;
+   controls.dampingFactor = 0.25;
+   controls.screenSpacePanning = false;
+
+   // Lighting
+   const ambientLight = new THREE.AmbientLight(0x404040, 1.5);
+   scene.add(ambientLight);
+   const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+   directionalLight.position.set(5, 10, 7.5).normalize();
+   scene.add(directionalLight);
+
+   // Camera positioning
+   camera.position.set(0, 0, 5);
+   controls.update();
+
+  
+    // Raycaster for occlusion culling
+    const raycaster = new THREE.Raycaster();
+ // FBX Loader
+ const fbxLoader = new FBXLoader();
+
+    // Create a web worker
+    workerRef.current = new Worker(new URL('../components/boxWorker.js', import.meta.url));
+
+    // Initialize Octree
+    octreeRef.current = new Octree(new THREE.Vector3(0, 0, 0), 40);
+
+    // Box creation function with LOD
+    const createBox = (x, y, z, priority) => {
+      const lod = new THREE.LOD();
+
+      // High detail (close to camera)
+      const highDetailGeometry = new THREE.BoxGeometry(1, 1, 1, 10, 10, 10);
+      const highDetailMaterial = new THREE.MeshStandardMaterial({ color: getPriorityColor(priority) });
+      const highDetailMesh = new THREE.Mesh(highDetailGeometry, highDetailMaterial);
+      lod.addLevel(highDetailMesh, 0);
+
+      // Medium detail
+      const mediumDetailGeometry = new THREE.BoxGeometry(1, 1, 1, 4, 4, 4);
+      const mediumDetailMaterial = new THREE.MeshStandardMaterial({ color: getPriorityColor(priority) });
+      const mediumDetailMesh = new THREE.Mesh(mediumDetailGeometry, mediumDetailMaterial);
+      lod.addLevel(mediumDetailMesh, 10);
+
+      // Low detail (far from camera)
+      const lowDetailGeometry = new THREE.BoxGeometry(1, 1, 1);
+      const lowDetailMaterial = new THREE.MeshStandardMaterial({ color: getPriorityColor(priority) });
+      const lowDetailMesh = new THREE.Mesh(lowDetailGeometry, lowDetailMaterial);
+      lod.addLevel(lowDetailMesh, 20);
+
+      lod.position.set(x, y, z);
+      lod.userData.priority = priority;
+      return lod;
+    };
+
+    // Function to get color based on priority
+    const getPriorityColor = (priority) => {
+      switch(priority) {
+        case 1: return 0xff0000; // Red
+        case 2: return 0x00ff00; // Green
+        case 3: return 0x0000ff; // Blue
+        default: return 0xffffff; // White
+      }
+    };
+
+   // Function to load and process file
+const loadFile = (file) => {
+  const reader = new FileReader();
+  reader.onload = (event) => {
+    const contents = event.target.result;
+    // Use FBXLoader to load the FBX file
+    fbxLoader.load(
+      URL.createObjectURL(file),
+      (object) => {
+        scene.add(object);
+        octreeRef.current.add(object);
+        // You might need to adjust the position, scale, and other properties of the loaded object
+      },
+      (xhr) => {
+        console.log((xhr.loaded / xhr.total * 100) + '% loaded');
+      },
+      (error) => {
+        console.error('An error happened', error);
+      }
+    );
+  };
+  reader.readAsArrayBuffer(file); // Use readAsArrayBuffer for binary files
+};
+
+// Handle file input change
+const handleFileChange = (event) => {
+  const files = event.target.files;
+  if (files.length > 0) {
+    setFile(files);
+    Array.from(files).forEach(file => {
+      loadFile(file);
+    });
+  }
+};
+
+    // Create file input element
+    const fileInput = document.createElement('input');
+fileInput.type = 'file';
+fileInput.accept = '.fbx'; // or other file types you want to support
+fileInput.multiple = true; // Allow multiple file uploads
+fileInput.style.position = 'absolute';
+fileInput.style.top = '10px';
+fileInput.style.left = '10px';
+fileInput.addEventListener('change', handleFileChange);
+
+    // Add file input to DOM
+    sceneRef.current.appendChild(fileInput);
+
+    workerRef.current.onmessage = (event) => {
+      const { type, boxes, message } = event.data;
+      if (type === 'error') {
+        console.error('Error from worker:', message);
+      } 
+      else if (type === 'updateBoxes') {
+        // Remove boxes that are no longer visible or priority 1
+        scene.children.forEach(child => {
+          if (child instanceof THREE.LOD) {
+            const boxData = boxes.find(b => b.x === child.position.x && b.y === child.position.y && b.z === child.position.z);
+            if (!boxData) {
+              scene.remove(child);
+              octreeRef.current.remove(child);
+              child.levels.forEach(level => {
+                level.object.geometry.dispose();
+                level.object.material.dispose();
+              });
+              unloadedCount++;
+            } else if (boxData.priority !== child.userData.priority) {
+              // Update priority if changed
+              child.userData.priority = boxData.priority;
+              child.levels.forEach(level => {
+                level.object.material.color.setHex(getPriorityColor(boxData.priority));
+              });
+            }
+          }
+        });
+    
+        // Add or update visible boxes and priority 1 boxes
+        boxes.forEach(({ x, y, z, priority }) => {
+          let box = scene.getObjectByName(`box_${x}_${y}_${z}`);
+          if (!box) {
+            box = createBox(x, y, z, priority);
+            box.name = `box_${x}_${y}_${z}`;
+            scene.add(box);
+            octreeRef.current.add(box);
+            justLoadedCount++;
+          } else if (box.userData.priority !== priority) {
+            box.userData.priority = priority;
+            box.levels.forEach(level => {
+              level.object.material.color.setHex(getPriorityColor(priority));
+            });
+          }
+        });
+      }
+    };
+
+    // Render loop
+    const animate = () => {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    };
+
+    animate();
+  // Fly controls
+  let continueTranslation = false;
+  let continueRotation = false;
+  let translationDirection = 0;
+  let rotationDirection = 0;
+  let translationSpeed = 5; // Initial translation speed
+  let rotationSpeed = 0.001; // Initial rotation speed
+// Define sensitivity constants
+  const horizontalSensitivity = 1.1; // Adjust as needed
+  const verticalSensitivity = 1.1; // Adjust as needed
+
+  // mouse events functions on fly control
+
+  const handleMouseDown = (event) => {
+        // event.preventDefault();
+        const mouseEvent = event.touches ? event.touches[0] : event;
+        if (mouseEvent.button === 0) { // Left mouse button pressed
+            
+            isMouseDown.current = true;
+            mouse.current.x = mouseEvent.clientX;
+            mouse.current.y = mouseEvent.clientY;
+            isZooming.current = true;
+            continueTranslation = true; // Enable automatic translation
+            continueRotation = true; // Enable automatic rotation
+            translationDirection = lastMouseMovement.current.y > 0 ? 1 : -1; // Set translation direction based on last mouse movement
+            rotationDirection = lastMouseMovement.current.x > 0 ? 1 : -1; // Set rotation direction based on last mouse movement
+        } else if (event.button === 1) { // Middle mouse button pressed
+            console.log("middlebutton pressed")
+            isPanning.current = true;
+            continueTranslation = true; // Enable automatic translation
+            mouse.current.x = mouseEvent.clientX;
+            mouse.current.y = mouseEvent.clientY;
+        }
+    };
+
+    const handleMouseUp = () => {
+        isMouseDown.current = false;
+        isPanning.current = false;
+        isZooming.current = false;    
+        lastMouseMovement.current = { x: 0, y: 0 };
+    };
+
+    const handleMouseMove = (event) => {
+        event.preventDefault();
+
+        const mouseEvent = event.touches ? event.touches[0] : event;
+        if (!isMouseDown.current && !isPanning.current && !isZooming.current) return;
+    
+        const movementX = mouseEvent.clientX - mouse.current.x;
+        const movementY = mouseEvent.clientY - mouse.current.y;
+    
+        lastMouseMovement.current = { x: movementX, y: movementY };
+        if (isMouseDown.current) { // Left mouse button clicked
+            const isHorizontal = Math.abs(movementX) > Math.abs(movementY);
+            if (isHorizontal) { // Horizontal movement, rotate around Y axis
+                continueCameraMovement(); 
+            } else  { // Vertical movement, forward/backward
+                continueCameraMovement(); // Adjust with factors
+            }
+        } else if (isPanning.current) { // Middle mouse button clicked
+
+            continueCameraMovement(movementX, movementY); // Adjust with factors
+        }
+    
+        mouse.current.x = mouseEvent.clientX;
+        mouse.current.y = mouseEvent.clientY;
+    };
+    
+    // const handleWheel = (event) => {
+    // const rotationAngle = -event.deltaY * 0.001;
+
+    // // Get the camera's up vector
+    // let cameraUp = new THREE.Vector3(1, 0, 0); // Assuming Y-axis is up
+    // cameraUp.applyQuaternion(cameraRef.current.quaternion);
+
+    // // Create a quaternion representing the rotation around the camera's up vector
+    // let quaternion = new THREE.Quaternion().setFromAxisAngle(cameraUp, rotationAngle);
+
+    // cameraRef.current.applyQuaternion(quaternion);
+    // storeCameraPosition(); // Assuming this function stores camera position
+
+    // };
+
+    const continueCameraMovement = () => {
+        const adjustedTranslationSpeed = flySpeed * translationSpeed ;
+        if (isMouseDown.current && (continueTranslation || continueRotation)) {
+            
+                requestAnimationFrame(continueCameraMovement);
+                const movementX = lastMouseMovement.current.x;
+                const movementY = lastMouseMovement.current.y;
+                const tileSizeFactor =10; // Implement this function to calculate the factor based on tile size
+                const isHorizontal = Math.abs(movementX) > Math.abs(movementY);
+                if(isHorizontal){
+                    const rotationAngle = -movementX * rotationSpeed * horizontalSensitivity * flyRotationSpeed *tileSizeFactor;
+
+                    // Get the camera's up vector
+                    let cameraUp = camera.up.clone().normalize();
+                    
+                    // Create a quaternion representing the rotation around the camera's up vector
+                    let quaternion = new THREE.Quaternion().setFromAxisAngle(cameraUp, rotationAngle);
+                    
+                    camera.applyQuaternion(quaternion);
+                    storeCameraPosition();
+
+                }
+                else {
+                    const zoomSpeed = movementY * 0.01; // Adjust zoom speed based on last recorded mouse movement
+
+                    const forwardDirection = new THREE.Vector3(0, 0, 1).applyQuaternion(camera.quaternion);
+                // Move the camera forward/backward along its local forward direction
+                camera.position.add(forwardDirection.multiplyScalar(zoomSpeed * adjustedTranslationSpeed * tileSizeFactor));
+                storeCameraPosition();
+
+                }			
+        }
+        
+        else if (isPanning.current && (continueTranslation)) {
+            requestAnimationFrame(continueCameraMovement);
+            const tileSizeFactor = 0.1;
+            const movementY = lastMouseMovement.current.y;
+            const movementX = lastMouseMovement.current.x;
+        const adjustedHorizontalSensitivity = horizontalSensitivity * tileSizeFactor;
+        const adjustedVerticalSensitivity = verticalSensitivity * tileSizeFactor;
+
+            // Calculate movement speed based on mouse movement and sensitivity
+            const moveSpeedX = movementX * adjustedHorizontalSensitivity;
+            const moveSpeedY = movementY * adjustedVerticalSensitivity;
+           
+            const isHorizontal = Math.abs(movementX) > Math.abs(movementY);
+            const isVertical = Math.abs(movementY) > Math.abs(movementX);
+        
+            if (isHorizontal) {
+                // Move the camera along its local x axis
+                camera.translateX(moveSpeedX);
+                storeCameraPosition()
+            } else if (isVertical) {
+                // Move the camera along its local y axis
+                camera.translateY(-moveSpeedY);
+                storeCameraPosition()
+
+            }
+
+
+        }
+    };
+    const storeCameraPosition = () => {
+    // const { position,} = camera;
+    // flyModeCameraPosition.current.copy(position);
+    // console.log('Camera position stored:', position);
+    // const { position, quaternion } = cameraRef.current;
+    // flyModeCameraPosition.current.copy(position);
+    // orbitControlsTargets.current.copy(controlsRef.current.target);
+    // // Optionally, you can save this state to a database or local storage.
+    // console.log('Camera position stored:', position);
+    };
+
+  // enablefycontrols
+const enablefycontrols=()=>{
+    document.addEventListener('mousedown', handleMouseDown);
+    document.addEventListener('mouseup', handleMouseUp);
+    document.addEventListener('mousemove', handleMouseMove);
+    
+}
+// disableflycontrols
+const disableflycontrols=()=>{
+    document.removeEventListener('mousedown', handleMouseDown);
+    document.removeEventListener('mouseup', handleMouseUp);
+    document.removeEventListener('mousemove', handleMouseMove);    
+}
+enablefycontrols();
+    return () => {
+      sceneRef.current.removeChild(fileInput);
+      workerRef.current.terminate();
+      // renderer.dispose();
+      // scene.dispose();
+      disableflycontrols();
+    };
+  }, []);
+
+  return (
+        <div ref={sceneRef} style={{ width: '100vw', height: '100vh' }}></div>
+
+  );
+};
+
+export default ThreeBoxes;

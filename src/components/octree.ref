@@ -1,0 +1,80 @@
+class Octree {
+  constructor(origin, size) {
+    this.origin = origin;
+    this.size = size;
+    this.objects = [];
+    this.children = [];
+  }
+
+  subdivide() {
+    const halfSize = this.size / 2;
+    const origins = [
+      new THREE.Vector3(this.origin.x - halfSize, this.origin.y - halfSize, this.origin.z - halfSize),
+      new THREE.Vector3(this.origin.x + halfSize, this.origin.y - halfSize, this.origin.z - halfSize),
+      new THREE.Vector3(this.origin.x - halfSize, this.origin.y + halfSize, this.origin.z - halfSize),
+      new THREE.Vector3(this.origin.x + halfSize, this.origin.y + halfSize, this.origin.z - halfSize),
+      new THREE.Vector3(this.origin.x - halfSize, this.origin.y - halfSize, this.origin.z + halfSize),
+      new THREE.Vector3(this.origin.x + halfSize, this.origin.y - halfSize, this.origin.z + halfSize),
+      new THREE.Vector3(this.origin.x - halfSize, this.origin.y + halfSize, this.origin.z + halfSize),
+      new THREE.Vector3(this.origin.x + halfSize, this.origin.y + halfSize, this.origin.z + halfSize),
+    ];
+
+    for (let i = 0; i < 8; i++) {
+      this.children.push(new Octree(origins[i], halfSize));
+    }
+  }
+
+  add(object) {
+    if (this.children.length === 0 && this.objects.length < 8) {
+      this.objects.push(object);
+    } else {
+      if (this.children.length === 0) this.subdivide();
+      for (const child of this.children) {
+        if (child.contains(object.position)) {
+          child.add(object);
+          return;
+        }
+      }
+      this.objects.push(object);
+    }
+  }
+
+  contains(position) {
+    return (
+      position.x >= this.origin.x - this.size &&
+      position.x < this.origin.x + this.size &&
+      position.y >= this.origin.y - this.size &&
+      position.y < this.origin.y + this.size &&
+      position.z >= this.origin.z - this.size &&
+      position.z < this.origin.z + this.size
+    );
+  }
+
+  intersectRay(ray) {
+    const intersections = [];
+    if (ray.intersectsBox(new THREE.Box3(
+      new THREE.Vector3(this.origin.x - this.size, this.origin.y - this.size, this.origin.z - this.size),
+      new THREE.Vector3(this.origin.x + this.size, this.origin.y + this.size, this.origin.z + this.size)
+    ))) {
+      if (this.children.length === 0) {
+        intersections.push(...this.objects);
+      } else {
+        for (const child of this.children) {
+          intersections.push(...child.intersectRay(ray));
+        }
+      }
+    }
+    return intersections;
+  }
+
+  remove(object) {
+    const index = this.objects.indexOf(object);
+    if (index !== -1) {
+      this.objects.splice(index, 1);
+    } else {
+      for (const child of this.children) {
+        child.remove(object);
+      }
+    }
+  }
+}
