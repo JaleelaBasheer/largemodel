@@ -10,24 +10,26 @@ function FinalLargeSceneModel() {
     const sceneRef = useRef(new THREE.Scene());
     const cameraRef = useRef(new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000));
     const rendererRef = useRef(new THREE.WebGLRenderer({ antialias: true }));
-    const [db, setDb] = useState(null);
-    const cumulativeBoundingBoxRef = useRef(new THREE.Box3());
-    const loadedMeshesRef = useRef([]);
-    const frustumRef = useRef(new THREE.Frustum());
-    const frustumMatrixRef = useRef(new THREE.Matrix4());   
+    const [db, setDb] = useState(null);  
     const mouse = useRef({ x: 0, y: 0 });
     const isMouseDown = useRef(false);
     const isPanning = useRef(false);
     const isZooming = useRef(false);
     const lastMouseMovement = useRef({ x: 0, y: 0 });
     const [flySpeed, setFlySpeed] = useState(1); 
-    const [flyrotationSpeed, setflyrotationSpeed] = useState(1); 
-    const [loadingProgress, setLoadingProgress] = useState(0); 
-    const [loading, setLoading] = useState(false);
+    const [flyrotationSpeed, setflyrotationSpeed] = useState(1);  
     const octreeRef = useRef(null);
     const loadedModels = useRef(new Map());
     const workerRef = useRef(null);
-
+       // Define clipping planes
+       const clippingPlanes = [
+        new THREE.Plane(new THREE.Vector3(1, 0, 0), 0),  // X plane
+        new THREE.Plane(new THREE.Vector3(-1, 0, 0), 0), // -X plane
+        new THREE.Plane(new THREE.Vector3(0, 1, 0), 0),  // Y plane
+        new THREE.Plane(new THREE.Vector3(0, -1, 0), 0), // -Y plane
+        new THREE.Plane(new THREE.Vector3(0, 0, 1), 0),  // Z plane
+        new THREE.Plane(new THREE.Vector3(0, 0, -1), 0)  // -Z plane
+    ];
     useEffect(() => {
         const initDB = async () => {
             const database = await openDB("fbx-files-db", 1, {
@@ -44,6 +46,11 @@ function FinalLargeSceneModel() {
         
         rendererRef.current.setSize(window.innerWidth, window.innerHeight);
         rendererRef.current.setClearColor(0xffff00);
+
+         // Apply clipping planes to renderer
+         rendererRef.current.clippingPlanes = clippingPlanes;
+         rendererRef.current.localClippingEnabled = true;
+
         mountRef.current.appendChild(rendererRef.current.domElement);
         
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
@@ -52,19 +59,15 @@ function FinalLargeSceneModel() {
         const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
         directionalLight.position.set(0, 1, 0);
         sceneRef.current.add(directionalLight);
-        
-       
-
         // Initialize Web Worker
         workerRef.current = new Worker(new URL('./finalpriorityWorker.js', import.meta.url));
         workerRef.current.onmessage = handleWorkerMessage;
         
         const sceneSize = 60; // Adjust based on your scene size
-        octreeRef.current = new Octree(new THREE.Vector3(0, 0, 0), sceneSize);
-        
-        animate();
-        
-        return () => {
+        octreeRef.current = new Octree(new THREE.Vector3(0, 0, 0), sceneSize);    
+           
+       animate();       
+       return () => {
             mountRef.current.removeChild(rendererRef.current.domElement);
             if (workerRef.current) {
                 workerRef.current.terminate();
@@ -77,68 +80,7 @@ function FinalLargeSceneModel() {
         return () => {
             disableflycontrols();
         };
-    }, [flySpeed, flyrotationSpeed]);
-
-    // useEffect(() => {
-    //     const initDB = async () => {
-    //         const database = await openDB("fbx-files-db", 1, {
-    //             upgrade(db) {
-    //                 if (!db.objectStoreNames.contains("files")) {
-    //                     db.createObjectStore("files", { keyPath: "id", autoIncrement: true });
-    //                 }
-    //             },
-    //         });
-    //         setDb(database);
-    //     };
-
-    //     initDB();
-      
-    //     rendererRef.current.setSize(window.innerWidth, window.innerHeight);
-    //     rendererRef.current.setClearColor(0xffff00);
-    //     mountRef.current.appendChild(rendererRef.current.domElement);
-      
-    //     const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
-    //     sceneRef.current.add(ambientLight);
-      
-    //     const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
-    //     directionalLight.position.set(0, 1, 0);
-    //     sceneRef.current.add(directionalLight);
-    //     const cameraHelper = new THREE.CameraHelper(cameraRef.current);
-    //     sceneRef.current.add(cameraHelper);
-
-    //       // Initialize Web Worker
-    //       workerRef.current = new Worker(new URL('../components/finalpriorityWorker.js', import.meta.url));
-    //       workerRef.current.onmessage = handleWorkerMessage;
-    //       const sceneSize = 60; // Adjust based on your scene size
-    //       octreeRef.current = new Octree(new THREE.Vector3(0, 0, 0), sceneSize);
-    //       const visualizeOctree = (octree) => {
-    //         const boxHelper = new THREE.BoxHelper(
-    //           new THREE.Mesh(
-    //             new THREE.BoxGeometry(octree.size, octree.size, octree.size),
-    //             new THREE.MeshBasicMaterial()
-    //           )
-    //         );
-    //         boxHelper.position.copy(octree.center);
-    //         sceneRef.current.add(boxHelper);
-          
-    //         if (octree.children) {
-    //           octree.children.forEach(child => visualizeOctree(child));
-    //         }
-    //       };
-          
-    //       // Call this function after creating the Octree
-    //       visualizeOctree(octreeRef.current);
-      
-    //     animate();
-      
-    //     return () => {
-    //       mountRef.current.removeChild(rendererRef.current.domElement);
-    //       if (workerRef.current) {
-    //         workerRef.current.terminate();
-    //     }
-    //     };
-    //   }, []);
-      
+    }, [flySpeed, flyrotationSpeed]);    
     const onFileChange = (event) => {
         const fbxLoader = new FBXLoader();
         const files = event.target.files;
@@ -151,7 +93,6 @@ function FinalLargeSceneModel() {
             low: 3,
           };
         if (files.length > 0) {
-          setLoading(true);
           let loadedFilesCount = 0;
     
           Array.from(files).forEach((file) => {
@@ -176,7 +117,6 @@ function FinalLargeSceneModel() {
           
                     loadedFilesCount++;
                     // Update progress
-                    setLoadingProgress(Math.round((loadedFilesCount / files.length) * 100));
           
                     // After all files are loaded, log the final cumulative bounding box
                     if (loadedFilesCount === files.length) {
@@ -197,9 +137,7 @@ function FinalLargeSceneModel() {
         };
         localStorage.setItem('boundingBoxCenter', JSON.stringify(centerData));
           
-                      // Remove progress bar after loading
-                      setLoading(false);
-                      setLoadingProgress(0);
+                     
                     }
                   });
               }
@@ -220,6 +158,10 @@ function FinalLargeSceneModel() {
 
       const handleWorkerMessage = (event) => {
         const { type, fileName, modelData, modelsToLoad, modelsToUnload } = event.data;
+        if (event.data.type === 'sceneUpdate') {
+          const { visibleModels } = event.data;
+          updateSceneVisibility(visibleModels);
+      }
         
         switch (type) {
             case 'loadModel':
@@ -234,6 +176,18 @@ function FinalLargeSceneModel() {
                 break;
         }
     };
+
+    const updateSceneVisibility = (visibleModels) => {
+      sceneRef.current.traverse((object) => {
+          if (object.isLOD) {
+              const modelInfo = visibleModels.find(model => model.fileName === object.name);
+              if (modelInfo) {
+                  object.visible = modelInfo.visible;
+                  object.update(cameraRef.current);
+              }
+          }
+      });
+  };
     function createBlurredMaterial(color) {
       return new THREE.MeshBasicMaterial({ color: color, transparent: true });
     }
@@ -285,25 +239,46 @@ function FinalLargeSceneModel() {
     // Usage in createLOD function
     const createLOD = (object) => {
       const lod = new THREE.LOD();
-    
+  
       // High detail (original model)
       lod.addLevel(object, 0);
-    
+  
       // Medium detail (simplified geometry)
       const mediumDetail = simplifyGeometry(object.clone(), 0.5);
       lod.addLevel(mediumDetail, 100);
-    
+  
       // Low detail (further simplified geometry)
       const lowDetail = simplifyGeometry(object.clone(), 0.2);
       lod.addLevel(lowDetail, 300);
-    
-      return lod;
-    };
-    
   
-    
-    
+      return lod;
+  };
+  const updateWorker = () => {
+    const cameraData = {
+        position: cameraRef.current.position.toArray(),
+        quaternion: cameraRef.current.quaternion.toArray(),
+        projectionMatrix: cameraRef.current.projectionMatrix.toArray()
+    };
 
+    const modelData = Array.from(loadedModels.current.entries())
+        .map(([fileName, modelInfo]) => {
+            if (modelInfo && modelInfo.position) {
+                return {
+                    fileName,
+                    position: modelInfo.position.toArray(),
+                    visible: modelInfo.lod && modelInfo.lod.visible !== undefined ? modelInfo.lod.visible : true
+                };
+            }
+            return null;
+        })
+        .filter(item => item !== null);
+
+    workerRef.current.postMessage({
+        type: 'updateScene',
+        cameraData: cameraData,
+        modelData: modelData
+    });
+};
     const updatePriorityQueue = () => {
         const cameraPosition = cameraRef.current.position;
         const modelData = Array.from(loadedModels.current.entries()).map(([fileName, modelInfo]) => ({
@@ -355,35 +330,7 @@ function FinalLargeSceneModel() {
         }
         loadedModels.current.delete(fileName);
     };
-  //   const performOcclusionCulling = () => {
-  //     const frustum = new THREE.Frustum();
-  //     const projScreenMatrix = new THREE.Matrix4();
-  //     projScreenMatrix.multiplyMatrices(cameraRef.current.projectionMatrix, cameraRef.current.matrixWorldInverse);
-  //     frustum.setFromProjectionMatrix(projScreenMatrix);
-
-  //     const visibleObjects = octreeRef.current.intersectFrustum(frustum);
-
-  //     sceneRef.current.traverse((object) => {
-  //         if (object.isMesh) {
-  //           console.log(`Object ${object.name} visibility: ${visibleObjects.includes(object)}`);
-  //             if (visibleObjects.includes(object)) {
-  //                 object.visible = true;
-  //             } else {
-  //                 object.visible = false;
-  //             }
-  //         }
-  //         if (object.isMesh) {
-  //           const bbox = new THREE.Box3().setFromObject(object);
-  //           if (frustum.intersectsBox(bbox)) {
-  //               console.log(`Object ${object.name} is within the frustum.`);
-  //           } else {
-  //               console.log(`Object ${object.name} is outside the frustum.`);
-  //           }
-  //       }
-  //     });
-
-
-  // };
+  
   const performOcclusionCulling = () => {
     const frustum = new THREE.Frustum();
     const projScreenMatrix = new THREE.Matrix4();
@@ -404,6 +351,7 @@ function FinalLargeSceneModel() {
         }
     });
 };
+
   
   const loadModel = async (file, priorityQueue) => {
     if (db) {
@@ -483,49 +431,7 @@ function FinalLargeSceneModel() {
           );
         }
       };
-      const convertMaterialsToStandard = (object) => {
-        object.traverse((child) => {
-          if (child.isMesh) {
-            if (Array.isArray(child.material)) {
-              child.material.forEach((material, index) => {
-                if (!(material instanceof THREE.MeshStandardMaterial)) {
-                  child.material[index] = new THREE.MeshStandardMaterial({
-                    color: material.color,
-                    map: material.map,
-                    // Add any other properties you want to copy
-                  });
-                }
-              });
-            } else {
-              if (!(child.material instanceof THREE.MeshStandardMaterial)) {
-                child.material = new THREE.MeshStandardMaterial({
-                  color: child.material.color,
-                  map: child.material.map,
-                  // Add any other properties you want to copy
-                });
-              }
-            }
-          }
-        });
-      };
-      // Export to GLTF
-const exportGLTF = (object) => {
-  const exporter = new GLTFExporter();
-  
-  exporter.parse(object, (result) => {
-    const blob = new Blob([result], { type: 'application/octet-stream' });
-    const url = URL.createObjectURL(blob);
-    
-    // Create a link element and trigger the download
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'model.glb'; // File name
-    link.click();
-    
-    // Release the object URL
-    URL.revokeObjectURL(url);
-  }, { binary: true });
-};
+     
       const removeTexturesAndApplyColor = (object) => {
         const color = new THREE.Color(0x0000ff);
         object.traverse((child) => {
@@ -548,15 +454,9 @@ const exportGLTF = (object) => {
         });
       };
       const animate = () => {
+        updateWorker();
         updatePriorityQueue();
         performOcclusionCulling();
-        //  Update LOD
-      // sceneRef.current.traverse((object) => {
-      //  if (object.isLOD) {
-      //   console.log(`LOD for ${object.name}:`, object.getCurrentLevel());
-      //    object.update(cameraRef.current);
-      // }
-      // });
       requestAnimationFrame(animate);
        rendererRef.current.render(sceneRef.current, cameraRef.current);
       };
@@ -750,3 +650,349 @@ const exportGLTF = (object) => {
 }
 
 export default FinalLargeSceneModel
+// import React, { useEffect, useRef, useState } from "react";
+// import * as THREE from "three";
+// import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader";
+// import { openDB } from "idb";
+// import { SimplifyModifier } from 'three/examples/jsm/modifiers/SimplifyModifier.js';
+// import { Octree } from '../Octree'; // Assuming we've moved Octree to a separate file
+
+// function FinalLargeSceneModel() {
+//     const mountRef = useRef(null);
+//     const sceneRef = useRef(new THREE.Scene());
+//     const cameraRef = useRef(new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000));
+//     const rendererRef = useRef(new THREE.WebGLRenderer({ antialias: true }));
+//     const [db, setDb] = useState(null);
+//     const octreeRef = useRef(null);
+//     const loadedModels = useRef(new Map());
+//     const workerRef = useRef(null);
+
+//     useEffect(() => {
+//       const initDB = async () => {
+//         try {
+//             const database = await openDB("fbx-files-db", 1, {
+//                 upgrade(db) {
+//                     if (!db.objectStoreNames.contains("files")) {
+//                         db.createObjectStore("files", { keyPath: "id", autoIncrement: true });
+//                     }
+//                 },
+//             });
+//             setDb(database);
+//             console.log("Database initialized successfully");
+//         } catch (error) {
+//             console.error("Error initializing database:", error);
+//         }
+//     };
+
+//     initDB();
+    
+//     rendererRef.current.setSize(window.innerWidth, window.innerHeight);
+//     rendererRef.current.setClearColor(0xffff00);
+//     mountRef.current.appendChild(rendererRef.current.domElement);
+    
+//     const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+//     sceneRef.current.add(ambientLight);
+    
+//     const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+//     directionalLight.position.set(0, 1, 0);
+//     sceneRef.current.add(directionalLight);
+
+//     // Initialize Web Worker
+//     workerRef.current = new Worker(new URL('../components/finalpriorityWorker.js', import.meta.url));
+//     workerRef.current.onmessage = handleWorkerMessage;
+    
+//     const sceneSize = 60; // Adjust based on your scene size
+//     octreeRef.current = new Octree(new THREE.Vector3(0, 0, 0), sceneSize);
+    
+//     animate();
+    
+//     return () => {
+//         mountRef.current.removeChild(rendererRef.current.domElement);
+//         if (workerRef.current) {
+//             workerRef.current.terminate();
+//         }
+//     };
+//     }, []);
+
+//     const onFileChange = (event) => {
+//       const files = event.target.files;
+//       if (files.length > 0) {
+//           Array.from(files).forEach((file) => {
+//               const priority = determinePriority(file);
+//               loadModel(file, priority);
+//           });
+//       }
+//   };
+
+//     const determinePriority = (file) => {
+//         const fileSize = file.size;
+//         if (fileSize < 5000000) return 'high';
+//         if (fileSize < 50000000) return 'medium';
+//         return 'low';
+//     };
+
+//     const handleWorkerMessage = (event) => {
+//         const { type, fileName, modelData, modelsToLoad, modelsToUnload } = event.data;
+        
+//         switch (type) {
+//             case 'loadModel':
+//                 loadModelToScene(fileName, modelData);
+//                 break;
+//             case 'unloadModel':
+//                 unloadModelFromScene(fileName);
+//                 break;
+//             case 'updateLoadedModels':
+//                 modelsToLoad.forEach(model => loadModelFromDB(model));
+//                 modelsToUnload.forEach(model => unloadModelFromScene(model));
+//                 break;
+//         }
+//     };
+
+//     const updateWorker = () => {
+//         const cameraData = {
+//             position: cameraRef.current.position.toArray(),
+//             quaternion: cameraRef.current.quaternion.toArray(),
+//             projectionMatrix: cameraRef.current.projectionMatrix.toArray()
+//         };
+
+//         const modelData = Array.from(loadedModels.current.entries())
+//             .map(([fileName, modelInfo]) => ({
+//                 fileName,
+//                 position: modelInfo.position.toArray(),
+//                 visible: modelInfo.lod ? modelInfo.lod.visible : false // Add a check here
+//             }))
+//             .filter(model => model.position); // Ensure we only send models with valid positions
+
+//         workerRef.current.postMessage({
+//             type: 'updateScene',
+//             cameraData: cameraData,
+//             modelData: modelData
+//         });
+//     };
+
+//     const loadModelToScene = (fileName, modelData) => {
+//       const loader = new FBXLoader();
+//       try {
+//           loader.parse(modelData, "", (object) => {
+//               removeTexturesAndApplyColor(object);
+//               object.name = fileName;
+          
+//               const lod = createLOD(object);
+//               sceneRef.current.add(lod);
+          
+//               octreeRef.current.add(lod);
+          
+//               const boundingBox = new THREE.Box3().setFromObject(object);
+//               const center = boundingBox.getCenter(new THREE.Vector3());
+//               loadedModels.current.set(fileName, { position: center, lod: lod });
+//           }, undefined, (error) => {
+//               console.error("Error parsing FBX file:", error);
+//           });
+//       } catch (error) {
+//           console.error("Error loading model:", error);
+//       }
+//   };
+
+//     const unloadModelFromScene = (fileName) => {
+//         const object = sceneRef.current.getObjectByName(fileName);
+//         if (object) {
+//             sceneRef.current.remove(object);
+//             octreeRef.current.remove(object);
+//             object.traverse((child) => {
+//                 if (child.geometry) child.geometry.dispose();
+//                 if (child.material) {
+//                     if (Array.isArray(child.material)) {
+//                         child.material.forEach(material => material.dispose());
+//                     } else {
+//                         child.material.dispose();
+//                     }
+//                 }
+//             });
+//         }
+//         loadedModels.current.delete(fileName);
+//     };
+
+//     const loadModel = async (file, priority) => {
+//         if (db) {
+//             try {
+//                 const existingFile = await db.get("files", file.name);
+                
+//                 if (existingFile) {
+//                     console.log(`File already exists: ${file.name}`);
+//                     loadedModels.current.set(file.name, { position: new THREE.Vector3() });
+
+//                     workerRef.current.postMessage({
+//                         type: 'newModel',
+//                         fileName: file.name,
+//                         priority
+//                     });
+
+//                     await loadModelFromDB(file.name);
+//                 } else {
+//                     const reader = new FileReader();
+
+//                     reader.onload = async (event) => {
+//                         const arrayBuffer = event.target.result;
+
+//                         await db.put("files", { id: file.name, data: arrayBuffer });
+//                         console.log(`Stored file: ${file.name}`);
+
+//                         loadedModels.current.set(file.name, { position: new THREE.Vector3() });
+
+//                         workerRef.current.postMessage({
+//                             type: 'newModel',
+//                             fileName: file.name,
+//                             priority
+//                         });
+
+//                         await loadModelFromDB(file.name);
+//                     };
+
+//                     reader.readAsArrayBuffer(file);
+//                 }
+//             } catch (error) {
+//                 console.error("Error loading model:", error);
+//             }
+//         }
+//     };
+
+//     const loadModelFromDB = async (fileName) => {
+//       if (!db) {
+//           console.error("Database not initialized");
+//           return;
+//       }
+  
+//       try {
+//           const tx = db.transaction("files", "readonly");
+//           const store = tx.objectStore("files");
+//           const file = await store.get(fileName);
+      
+//           if (file) {
+//               const arrayBuffer = file.data;
+//               loadModelToScene(fileName, arrayBuffer);
+//           } else {
+//               console.error(`File not found in database: ${fileName}`);
+//           }
+//       } catch (error) {
+//           console.error("Error loading model from DB:", error);
+//       }
+//   }
+
+//     const removeTexturesAndApplyColor = (object) => {
+//         const color = new THREE.Color(0x0000ff);
+//         object.traverse((child) => {
+//             if (child.isMesh) {
+//                 if (child.material) {
+//                     if (Array.isArray(child.material)) {
+//                         child.material.forEach(material => {
+//                             material.map = null;
+//                             material.needsUpdate = true;
+//                         });
+//                     } else {
+//                         child.material.map = null;
+//                         child.material.needsUpdate = true;
+//                     }
+//                 }
+//             }
+//         });
+//     };
+
+//     const createLOD = (object) => {
+//         const lod = new THREE.LOD();
+    
+//         // High detail (original model)
+//         lod.addLevel(object, 0);
+    
+//         // Medium detail (simplified geometry)
+//         const mediumDetail = simplifyGeometry(object.clone(), 0.5);
+//         lod.addLevel(mediumDetail, 100);
+    
+//         // Low detail (further simplified geometry)
+//         const lowDetail = simplifyGeometry(object.clone(), 0.2);
+//         lod.addLevel(lowDetail, 300);
+    
+//         return lod;
+//     };
+
+//     const simplifyGeometry = (object, factor) => {
+//         const modifier = new SimplifyModifier();
+      
+//         object.traverse((child) => {
+//           if (child.isMesh && child.geometry) {
+//             let geometry = child.geometry;
+      
+//             if (!(geometry instanceof THREE.BufferGeometry)) {
+//               geometry = new THREE.BufferGeometry().fromGeometry(geometry);
+//             }
+      
+//             const initialVertexCount = geometry.attributes.position.count;
+//             const targetVertices = Math.max(10, Math.floor(initialVertexCount * factor));
+//             const numVerticesToRemove = initialVertexCount - targetVertices;
+      
+//             if (numVerticesToRemove > 0 && initialVertexCount > 20) {
+//               try {
+//                 const simplifiedGeometry = modifier.modify(geometry.clone(), numVerticesToRemove);
+      
+//                 if (simplifiedGeometry.attributes.position.count >= 10) {
+//                   child.geometry = simplifiedGeometry;
+//                   geometry.dispose();
+//                 } else {
+//                   console.warn(`Skipping oversimplified geometry for ${child.name}.`);
+//                 }
+//               } catch (error) {
+//                 console.warn(`Failed to simplify geometry for ${child.name}:`, error);
+//               }
+//             } else {
+//               console.warn(`Skipping simplification for ${child.name} due to low vertex count.`);
+//             }
+      
+//             child.scale.multiplyScalar(factor);
+//           }
+//         });
+      
+//         return object;
+//     };
+
+//     const performOcclusionCulling = () => {
+//         const frustum = new THREE.Frustum();
+//         const projScreenMatrix = new THREE.Matrix4();
+//         projScreenMatrix.multiplyMatrices(cameraRef.current.projectionMatrix, cameraRef.current.matrixWorldInverse);
+//         frustum.setFromProjectionMatrix(projScreenMatrix);
+
+//         const visibleObjects = octreeRef.current.intersectFrustum(frustum);
+
+//         sceneRef.current.traverse((object) => {
+//             if (object.isLOD) {
+//                 const isVisible = visibleObjects.some(visObj => visObj === object || object.getObjectById(visObj.id));
+//                 object.visible = isVisible;
+                
+//                 if (isVisible) {
+//                     object.update(cameraRef.current);
+//                 }
+//             }
+//         });
+//     };
+
+//     const animate = () => {
+//         updateWorker();
+//         performOcclusionCulling();
+//         requestAnimationFrame(animate);
+//         rendererRef.current.render(sceneRef.current, cameraRef.current);
+//     };
+
+//     return (
+//     <div className="main">
+//     <div className="canvas-container" style={{position:'relative',width:'100%',height:'100vh',overflow:'hidden'}}>
+//       <div style={{position:'absolute',top:'10px',left:'10px'}} >
+//       <input className="button" type="file" multiple onChange={onFileChange} accept=".fbx" />
+    
+//       </div>
+      
+//       <div ref={mountRef} style={{ width: "100%", height: "100vh" }}></div>
+     
+//     </div>
+//   </div>
+//   )
+// }
+
+// export default FinalLargeSceneModel

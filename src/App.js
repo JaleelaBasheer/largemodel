@@ -5,9 +5,9 @@ import FbxFileLoader from './components/FbxFileLoader';
 import ThreeBoxes from './components/MoreBoxes';
 import FBXViewer from './components/NewFbxFileLoader';
 import Cubes from './Custom/Cubes';
-import SceneCanvas from './Largecomponent/SceneCanvas';
-import SceneManager from './Largecomponent/SceneManager';
 import FinalLargeSceneModel from './components/FinalLargeSceneModel'
+import MoreBoxes from './Largecomponent/MoreBoxes';
+import MultipleModelLoader from './LargefbxModels/ModalFBX';
 
 function App() {
   return (
@@ -16,9 +16,10 @@ function App() {
       {/* <FbxFileLoader/> */}
       {/* <CompressedFbx/> */}
       {/* <FBXViewer/> */}
-      {/* <SceneManager/> */}
       {/* <Cubes/> */}
-      <FinalLargeSceneModel/>
+      {/* <FinalLargeSceneModel/> */}
+      <MoreBoxes/>
+      {/* <MultipleModelLoader/> */}
      
     </div>
   );
