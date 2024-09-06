@@ -1,704 +1,7 @@
-// 1.)Generate random boxes
-//---------------------------------------
-// import React, { useRef, useEffect } from 'react';
-// import * as THREE from 'three';
-// import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
-
-// const RandomBoxesScene = () => {
-//   const mountRef = useRef(null);
-
-//   useEffect(() => {
-//     const currentMount = mountRef.current;
-
-//     // Scene setup
-//     const scene = new THREE.Scene();
-//     const camera = new THREE.PerspectiveCamera(75, currentMount.clientWidth / currentMount.clientHeight, 0.1, 2000);
-//     const renderer = new THREE.WebGLRenderer();
-//     renderer.setSize(currentMount.clientWidth, currentMount.clientHeight);
-//     currentMount.appendChild(renderer.domElement);
-
-//     // Camera position
-//     camera.position.z = 1500;
-
-//     // Lights
-//     const ambientLight = new THREE.AmbientLight(0x404040);
-//     scene.add(ambientLight);
-//     const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
-//     directionalLight.position.set(1, 1, 1);
-//     scene.add(directionalLight);
-
-//     // Controls
-//     const controls = new OrbitControls(camera, renderer.domElement);
-
-//     // Generate 1000 random boxes
-//     const boxGeometry = new THREE.BoxGeometry(10, 10, 10);
-//     const boxMaterial = new THREE.MeshPhongMaterial({ color: 0x00ff00 });
-
-//     for (let i = 0; i < 1000; i++) {
-//       const box = new THREE.Mesh(boxGeometry, boxMaterial);
-      
-//       // Random position within 1000m³ volume (10m x 10m x 10m)
-//       box.position.set(
-//         Math.random() * 1000 - 500,
-//         Math.random() * 1000 - 500,
-//         Math.random() * 1000 - 500
-//       );
-
-//       // Random rotation
-//       box.rotation.set(
-//         Math.random() * Math.PI,
-//         Math.random() * Math.PI,
-//         Math.random() * Math.PI
-//       );
-
-//       scene.add(box);
-//     }
-
-//     // Animation loop
-//     const animate = () => {
-//       requestAnimationFrame(animate);
-//       controls.update();
-//       renderer.render(scene, camera);
-//     };
-//     animate();
-
-//     // Handle window resize
-//     const handleResize = () => {
-//       camera.aspect = currentMount.clientWidth / currentMount.clientHeight;
-//       camera.updateProjectionMatrix();
-//       renderer.setSize(currentMount.clientWidth, currentMount.clientHeight);
-//     };
-//     window.addEventListener('resize', handleResize);
-
-//     // Cleanup
-//     return () => {
-//       window.removeEventListener('resize', handleResize);
-//       currentMount.removeChild(renderer.domElement);
-//     };
-//   }, []);
-
-//   return <div ref={mountRef} style={{ width: '100%', height: '100vh' }} />;
-// };
-
-// export default RandomBoxesScene;
-
-// -----------------------------------------------------------------------------//
-// ==============================================================================//
-// 2.) Web worker
-//-----------------------------------------------------
-// import React, { useRef, useEffect, useState } from 'react';
-// import * as THREE from 'three';
-// import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
-
-// // Web Worker code (you'll need to create a separate file for this)
-// const workerCode = `
-//   self.onmessage = function(e) {
-//     const { count, volume } = e.data;
-//     const boxes = [];
-//     for (let i = 0; i < count; i++) {
-//       boxes.push({
-//         position: [
-//           Math.random() * volume - volume/2,
-//           Math.random() * volume - volume/2,
-//           Math.random() * volume - volume/2
-//         ],
-//         rotation: [
-//           Math.random() * Math.PI,
-//           Math.random() * Math.PI,
-//           Math.random() * Math.PI
-//         ]
-//       });
-//     }
-//     self.postMessage(boxes);
-//   };
-// `;
-
-// const RandomBoxesScene = () => {
-//   const mountRef = useRef(null);
-//   const [loadedCount, setLoadedCount] = useState(0);
-//   const [unloadedCount, setUnloadedCount] = useState(0);
-
-//   useEffect(() => {
-//     const currentMount = mountRef.current;
-
-//     // Scene setup
-//     const scene = new THREE.Scene();
-//     const camera = new THREE.PerspectiveCamera(75, currentMount.clientWidth / currentMount.clientHeight, 0.1, 200);
-//     const renderer = new THREE.WebGLRenderer();
-//     renderer.setSize(currentMount.clientWidth, currentMount.clientHeight);
-//     currentMount.appendChild(renderer.domElement);
-
-//     // Camera position
-//     camera.position.z = 1500;
-
-//     // Lights
-//     const ambientLight = new THREE.AmbientLight(0x404040);
-//     scene.add(ambientLight);
-//     const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
-//     directionalLight.position.set(1, 1, 1);
-//     scene.add(directionalLight);
-
-//     // Controls
-//     const controls = new OrbitControls(camera, renderer.domElement);
-
-//     // Box geometry and materials
-//     const boxGeometry = new THREE.BoxGeometry(10, 10, 10);
-//     const loadedMaterial = new THREE.MeshPhongMaterial({ color: 0x00ff00 });
-//     const unloadedMaterial = new THREE.MeshPhongMaterial({ color: 0xff0000 });
-
-//     // Frustum for culling
-//     const frustum = new THREE.Frustum();
-//     const projScreenMatrix = new THREE.Matrix4();
-
-//     // Boxes array
-//     const boxes = [];
-
-//     // Web Worker setup
-//     const blob = new Blob([workerCode], { type: 'application/javascript' });
-//     const worker = new Worker(URL.createObjectURL(blob));
-
-//     worker.onmessage = function(e) {
-//       const boxData = e.data;
-//       boxData.forEach((data, index) => {
-//         const box = new THREE.Mesh(boxGeometry, unloadedMaterial);
-//         box.position.set(...data.position);
-//         box.rotation.set(...data.rotation);
-//         box.visible = false;
-//         boxes.push(box);
-//         scene.add(box);
-//       });
-//       setUnloadedCount(boxData.length);
-//     };
-
-//     worker.postMessage({ count: 1000, volume: 1000 });
-
-//     // Function to update box visibility based on distance and frustum
-//     const updateBoxVisibility = () => {
-//       camera.updateMatrixWorld();
-//       projScreenMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
-//       frustum.setFromProjectionMatrix(projScreenMatrix);
-
-//       let loaded = 0;
-//       let unloaded = 0;
-
-//       boxes.forEach((box) => {
-//         const distance = camera.position.distanceTo(box.position);
-//         const inFrustum = frustum.containsPoint(box.position);
-
-//         if (distance < 1000 && inFrustum) {
-//           if (!box.visible) {
-//             box.visible = true;
-//             box.material = loadedMaterial;
-//           }
-//           loaded++;
-//         } else {
-//           if (box.visible) {
-//             box.visible = false;
-//             box.material = unloadedMaterial;
-//           }
-//           unloaded++;
-//         }
-//       });
-
-//       setLoadedCount(loaded);
-//       setUnloadedCount(unloaded);
-//     };
-
-//     // Animation loop
-//     const animate = () => {
-//       requestAnimationFrame(animate);
-//       controls.update();
-//       updateBoxVisibility();
-//       renderer.render(scene, camera);
-//     };
-//     animate();
-
-//     // Handle window resize
-//     const handleResize = () => {
-//       camera.aspect = currentMount.clientWidth / currentMount.clientHeight;
-//       camera.updateProjectionMatrix();
-//       renderer.setSize(currentMount.clientWidth, currentMount.clientHeight);
-//     };
-//     window.addEventListener('resize', handleResize);
-
-//     // Cleanup
-//     return () => {
-//       window.removeEventListener('resize', handleResize);
-//       currentMount.removeChild(renderer.domElement);
-//       worker.terminate();
-//     };
-//   }, []);
-
-//   return (
-//     <div>
-//       <div ref={mountRef} style={{ width: '100%', height: '100vh' }} />
-//       <div style={{ position: 'absolute', top: 10, left: 10, color: 'white' }}>
-//         Loaded: {loadedCount}, Unloaded: {unloadedCount}
-//       </div>
-//     </div>
-//   );
-// };
-
-// export default RandomBoxesScene;
-
-//-------------------------------------------------------------------//
-// ==================================================================//
-
-//3.) web worker, octri and cullin
-//----------------------------------------------------
-
-// import React, { useRef, useEffect, useState } from 'react';
-// import * as THREE from 'three';
-// import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
-
-// const workerCode = `
-//   self.onmessage = function(e) {
-//     const { count, volume } = e.data;
-//     const boxes = [];
-//     for (let i = 0; i < count; i++) {
-//       boxes.push({
-//         position: [
-//           Math.random() * volume - volume/2,
-//           Math.random() * volume - volume/2,
-//           Math.random() * volume - volume/2
-//         ],
-//         rotation: [
-//           Math.random() * Math.PI,
-//           Math.random() * Math.PI,
-//           Math.random() * Math.PI
-//         ]
-//       });
-//     }
-//     self.postMessage(boxes);
-//   };
-// `;
-
-// const RandomBoxesScene = () => {
-//   const mountRef = useRef(null);
-//   const [stats, setStats] = useState({ loaded: 0, unloaded: 0, culled: 0, unculled: 0 });
-
-//   useEffect(() => {
-//     const currentMount = mountRef.current;
-
-//     // Scene setup
-//     const scene = new THREE.Scene();
-//     const camera = new THREE.PerspectiveCamera(75, currentMount.clientWidth / currentMount.clientHeight, 0.1, 2000);
-//     const renderer = new THREE.WebGLRenderer({ antialias: true });
-//     renderer.setSize(currentMount.clientWidth, currentMount.clientHeight);
-//     currentMount.appendChild(renderer.domElement);
-
-//     // Camera position - moved closer
-//     camera.position.z = 750;
-
-//     // Lights
-//     const ambientLight = new THREE.AmbientLight(0x404040);
-//     scene.add(ambientLight);
-//     const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
-//     directionalLight.position.set(1, 1, 1);
-//     scene.add(directionalLight);
-
-//     // Controls
-//     const controls = new OrbitControls(camera, renderer.domElement);
-
-//     // Box geometry and materials - increased size
-//     const boxGeometry = new THREE.BoxGeometry(20, 20, 20);
-//     const loadedMaterial = new THREE.MeshPhongMaterial({ color: 0x00ff00 });
-//     const unloadedMaterial = new THREE.MeshPhongMaterial({ color: 0xff0000 });
-
-//     // Frustum for culling
-//     const frustum = new THREE.Frustum();
-//     const projScreenMatrix = new THREE.Matrix4();
-
-//     // Boxes array
-//     const boxes = [];
-
-//     // Web Worker setup
-//     const blob = new Blob([workerCode], { type: 'application/javascript' });
-//     const worker = new Worker(URL.createObjectURL(blob));
-
-//     worker.onmessage = function(e) {
-//       const boxData = e.data;
-//       boxData.forEach((data, index) => {
-//         const box = new THREE.Mesh(boxGeometry, unloadedMaterial);
-//         box.position.set(...data.position);
-//         box.rotation.set(...data.rotation);
-//         box.visible = true; // Set initially visible
-//         boxes.push(box);
-//         scene.add(box);
-//       });
-//       setStats(prevStats => ({ ...prevStats, unloaded: boxData.length }));
-//     };
-
-//     worker.postMessage({ count: 1000, volume: 1000 });
-
-//     // Function to update box visibility based on distance and frustum
-//     const updateBoxVisibility = () => {
-//       camera.updateMatrixWorld();
-//       projScreenMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
-//       frustum.setFromProjectionMatrix(projScreenMatrix);
-
-//       let loaded = 0;
-//       let unloaded = 0;
-//       let culled = 0;
-//       let unculled = 0;
-
-//       boxes.forEach((box) => {
-//         const distance = camera.position.distanceTo(box.position);
-//         const inFrustum = frustum.intersectsObject(box);
-
-//         if (distance < 1500 && inFrustum) { // Increased distance check
-//           if (!box.visible) {
-//             box.visible = true;
-//             box.material = loadedMaterial;
-//           }
-//           loaded++;
-//           unculled++;
-//         } else {
-//           if (box.visible) {
-//             box.visible = false;
-//             box.material = unloadedMaterial;
-//           }
-//           unloaded++;
-//           if (!inFrustum) {
-//             culled++;
-//           }
-//         }
-//       });
-
-//       setStats({ loaded, unloaded, culled, unculled });
-//     };
-
-//     // Animation loop
-//     const animate = () => {
-//       requestAnimationFrame(animate);
-//       controls.update();
-//       updateBoxVisibility();
-//       renderer.render(scene, camera);
-//     };
-//     animate();
-
-//     // Handle window resize
-//     const handleResize = () => {
-//       camera.aspect = currentMount.clientWidth / currentMount.clientHeight;
-//       camera.updateProjectionMatrix();
-//       renderer.setSize(currentMount.clientWidth, currentMount.clientHeight);
-//     };
-//     window.addEventListener('resize', handleResize);
-
-//     // Cleanup
-//     return () => {
-//       window.removeEventListener('resize', handleResize);
-//       currentMount.removeChild(renderer.domElement);
-//       worker.terminate();
-//     };
-//   }, []);
-
-//   // Log stats to console whenever they change
-//   useEffect(() => {
-//     console.log('Rendering stats:', stats);
-//   }, [stats]);
-
-//   return (
-//     <div>
-//       <div ref={mountRef} style={{ width: '100%', height: '100vh' }} />
-//       <div style={{ position: 'absolute', top: 10, left: 10, color: 'white' }}>
-//         Loaded: {stats.loaded}, Unloaded: {stats.unloaded}, Culled: {stats.culled}, Unculled: {stats.unculled}
-//       </div>
-//     </div>
-//   );
-// };
-
-// export default RandomBoxesScene;
-
-
-// ------------------------------------------------------------//
-// ==========================================================//
-
-//3)------------------------------------------------------------
-// webworker , octri and occulusion culling
-// import React, { useRef, useEffect, useState } from 'react';
-// import * as THREE from 'three';
-// import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
-
-// // Custom Octree implementation
-// class Octree {
-//   constructor(center, size) {
-//     this.center = center;
-//     this.size = size;
-//     this.objects = [];
-//     this.children = null;
-//   }
-
-//   insert(object) {
-//     if (this.children !== null) {
-//       const octant = this.getOctant(object.position);
-//       if (octant !== -1) {
-//         this.children[octant].insert(object);
-//         return;
-//       }
-//     }
-
-//     this.objects.push(object);
-
-//     if (this.children === null && this.objects.length > 8 && this.size > 20) {
-//       this.split();
-//     }
-//   }
-
-//   split() {
-//     const halfSize = this.size / 2;
-//     this.children = [];
-//     for (let i = 0; i < 8; i++) {
-//       const newCenter = new THREE.Vector3(
-//         this.center.x + (i & 1 ? halfSize : -halfSize),
-//         this.center.y + (i & 2 ? halfSize : -halfSize),
-//         this.center.z + (i & 4 ? halfSize : -halfSize)
-//       );
-//       this.children.push(new Octree(newCenter, halfSize));
-//     }
-
-//     for (const object of this.objects) {
-//       const octant = this.getOctant(object.position);
-//       if (octant !== -1) {
-//         this.children[octant].insert(object);
-//       }
-//     }
-
-//     this.objects = [];
-//   }
-
-//   getOctant(position) {
-//     const dx = position.x - this.center.x;
-//     const dy = position.y - this.center.y;
-//     const dz = position.z - this.center.z;
-//     let octant = 0;
-//     if (dx > 0) octant |= 1;
-//     if (dy > 0) octant |= 2;
-//     if (dz > 0) octant |= 4;
-//     return octant;
-//   }
-
-//   getObjectsInFrustum(frustum) {
-//     const objects = [];
-//     this.getObjectsInFrustumRecursive(frustum, objects);
-//     return objects;
-//   }
-
-//   getObjectsInFrustumRecursive(frustum, objects) {
-//     if (!frustum.intersectsBox(new THREE.Box3().setFromCenterAndSize(this.center, new THREE.Vector3(this.size, this.size, this.size)))) {
-//       return;
-//     }
-
-//     objects.push(...this.objects);
-
-//     if (this.children !== null) {
-//       for (const child of this.children) {
-//         child.getObjectsInFrustumRecursive(frustum, objects);
-//       }
-//     }
-//   }
-// }
-
-// // Web Worker code (you'll need to create a separate file for this)
-// const workerCode = `
-//   self.onmessage = function(e) {
-//     const { count, volume } = e.data;
-//     const boxes = [];
-//     for (let i = 0; i < count; i++) {
-//       boxes.push({
-//         position: [
-//           Math.random() * volume - volume/2,
-//           Math.random() * volume - volume/2,
-//           Math.random() * volume - volume/2
-//         ],
-//         rotation: [
-//           Math.random() * Math.PI,
-//           Math.random() * Math.PI,
-//           Math.random() * Math.PI
-//         ]
-//       });
-//     }
-//     self.postMessage(boxes);
-//   };
-// `;
-
-
-// const RandomBoxesScene = () => {
-//     const mountRef = useRef(null);
-//     const [loadedCount, setLoadedCount] = useState(0);
-//     const [unloadedCount, setUnloadedCount] = useState(0);
-//     const [culledCount, setCulledCount] = useState(0);
-//     const [unculledCount, setUnculledCount] = useState(0);
-  
-//     useEffect(() => {
-//       const currentMount = mountRef.current;
-  
-//       // Scene setup
-//       const scene = new THREE.Scene();
-//       const camera = new THREE.PerspectiveCamera(75, currentMount.clientWidth / currentMount.clientHeight, 0.1, 4000);
-//       const renderer = new THREE.WebGLRenderer();
-//       renderer.setSize(currentMount.clientWidth, currentMount.clientHeight);
-//       currentMount.appendChild(renderer.domElement);
-  
-//       // Camera position
-//       camera.position.z = 100;
-  
-//       // Lights
-//       const ambientLight = new THREE.AmbientLight(0x404040);
-//       scene.add(ambientLight);
-//       const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
-//       directionalLight.position.set(1, 1, 1);
-//       scene.add(directionalLight);
-  
-//       // Controls
-//       const controls = new OrbitControls(camera, renderer.domElement);
-  
-//       // Box geometry and materials
-//       const boxGeometry = new THREE.BoxGeometry(10, 10, 10);
-//       const initialMaterial = new THREE.MeshPhongMaterial({ color: 0xff0000 });  // Red
-//       const reloadedMaterial = new THREE.MeshPhongMaterial({ color: 0x00ff00 });  // Green
-  
-//       // Frustum for culling
-//       const frustum = new THREE.Frustum();
-//       const projScreenMatrix = new THREE.Matrix4();
-  
-//       // Custom Octree setup
-//       const octree = new Octree(new THREE.Vector3(0, 0, 0), 1000);
-  
-//       // Boxes array
-//       const boxes = [];
-  
-//       // Web Worker setup
-//       const blob = new Blob([workerCode], { type: 'application/javascript' });
-//       const worker = new Worker(URL.createObjectURL(blob));
-  
-//       worker.onmessage = function(e) {
-//         const boxData = e.data;
-//         boxData.forEach((data, index) => {
-//           const box = new THREE.Mesh(boxGeometry, initialMaterial);
-//           box.position.set(...data.position);
-//           box.rotation.set(...data.rotation);
-//           box.visible = false;
-//           box.userData.loadState = 'initial';
-//           box.userData.hasBeenUnloaded = false;
-//           box.userData.isOccluded = false;
-//           boxes.push(box);
-//           scene.add(box);
-//           octree.insert(box);
-//         });
-//         setUnloadedCount(boxData.length);
-//       };
-  
-//       worker.postMessage({ count: 1000, volume: 1000 });
-  
-//       // Raycaster for occlusion culling
-//       const raycaster = new THREE.Raycaster();
-  
-//       // Function to update box visibility based on distance, frustum, and occlusion
-//       const updateBoxVisibility = () => {
-//         camera.updateMatrixWorld();
-//         projScreenMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
-//         frustum.setFromProjectionMatrix(projScreenMatrix);
-  
-//         const visibleBoxes = octree.getObjectsInFrustum(frustum);
-  
-//         let loaded = 0;
-//         let unloaded = 0;
-//         let culled = 0;
-//         let unculled = 0;
-  
-//         visibleBoxes.forEach((box) => {
-//           const distance = camera.position.distanceTo(box.position);
-  
-//           if (distance < 1000) {
-//             // Check for occlusion
-//             raycaster.set(camera.position, box.position.clone().sub(camera.position).normalize());
-//             const intersects = raycaster.intersectObjects(scene.children, true);
-  
-//             if (intersects.length > 0 && intersects[0].object !== box) {
-//               // Box is occluded
-//               box.visible = false;
-//               box.userData.isOccluded = true;
-//               culled++;
-//             } else {
-//               // Box is not occluded
-//               box.visible = true;
-//               box.userData.isOccluded = false;
-//               if (box.userData.hasBeenUnloaded) {
-//                 box.material = reloadedMaterial;
-//               }
-//               unculled++;
-//             }
-  
-//             if (box.visible) {
-//               loaded++;
-//             } else {
-//               unloaded++;
-//               box.userData.hasBeenUnloaded = true;
-//             }
-//           } else {
-//             // Box is out of range
-//             box.visible = false;
-//             box.userData.hasBeenUnloaded = true;
-//             unloaded++;
-//             culled++;
-//           }
-//         });
-  
-//         // Handle boxes not in frustum
-//         const outOfFrustumCount = boxes.length - visibleBoxes.length;
-//         culled += outOfFrustumCount;
-//         unloaded += outOfFrustumCount;
-  
-//         setLoadedCount(loaded);
-//         setUnloadedCount(unloaded);
-//         setCulledCount(culled);
-//         setUnculledCount(unculled);
-//       };
-  
-//       // Animation loop
-//       const animate = () => {
-//         requestAnimationFrame(animate);
-//         controls.update();
-//         updateBoxVisibility();
-//         renderer.render(scene, camera);
-//       };
-//       animate();
-  
-//       // Handle window resize
-//       const handleResize = () => {
-//         camera.aspect = currentMount.clientWidth / currentMount.clientHeight;
-//         camera.updateProjectionMatrix();
-//         renderer.setSize(currentMount.clientWidth, currentMount.clientHeight);
-//       };
-//       window.addEventListener('resize', handleResize);
-  
-//       // Cleanup
-//       return () => {
-//         window.removeEventListener('resize', handleResize);
-//         currentMount.removeChild(renderer.domElement);
-//         worker.terminate();
-//       };
-//     }, []);
-  
-//     return (
-//       <div>
-//         <div ref={mountRef} style={{ width: '100%', height: '100vh' }} />
-//         <div style={{ position: 'absolute', top: 10, left: 10, color: 'white' }}>
-//           Loaded: {loadedCount}, Unloaded: {unloadedCount}, Culled: {culledCount}, Unculled: {unculledCount}
-//         </div>
-//       </div>
-//     );
-//   };
-  
-//   export default RandomBoxesScene;
-
-
-//   -------------------------------------------------------------------------//
-// ===========================================================================//
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState,useCallback } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+import { FlyControls } from 'three/examples/jsm/controls/FlyControls';
 
 // Custom Octree implementation
 class Octree {
@@ -837,30 +140,62 @@ const workerCode = `
     const distance = Math.sqrt(dx*dx + dy*dy + dz*dz);
     return (50 / distance) * Math.min(viewportSize.width, viewportSize.height);
   }
-`;
-
-const RandomBoxesScene = () => {
+`;  
+  const RandomBoxesScene = () => {
     const mountRef = useRef(null);
     const [stats, setStats] = useState({
-      loaded: 0,
-      unloaded: 0,
-      culled: 0,
-      unculled: 0,
-      lod1: 0,
-      lod2: 0,
-      smallSizeUnloaded: 0,
-      total: 0
-    });
-  
+        loaded: 0,
+        unloaded: 0,
+        culled: 0,
+        unculled: 0,
+        lod1: 0,
+        lod2: 0,
+        smallSizeUnloaded: 0,
+        bufferVolumeOutsideFrustum: 0,
+        inBufferZone: 0,
+        inFrustum: 0,
+        loadedToScene: 0,
+        visibleBoxes: 0,
+        hiddenBoxes: 0,
+        total: 0
+      });
+      const [activeControls, setActiveControls] = useState('orbit');
+      const [flySpeed, setFlySpeed] = useState(1);
+      const [flyrotationSpeed, setflyrotationSpeed] = useState(1); 
+      const cameraRef = useRef(null);
+      const mouse = useRef({ x: 0, y: 0 });
+      const isMouseDown = useRef(false);
+      const isPanning = useRef(false);
+      const isZooming = useRef(false);
+      const lastMouseMovement = useRef({ x: 0, y: 0 });
+      const orbitControlsRef = useRef(null);
+      const sceneRef = useRef(null);
+      const rendererRef = useRef(null);
+    
+      const enableFlyControls = useCallback(() => {
+        document.addEventListener('mousedown', handleMouseDown);
+        document.addEventListener('mouseup', handleMouseUp);
+        document.addEventListener('mousemove', handleMouseMove);
+      }, []);
+    
+      const disableFlyControls = useCallback(() => {
+        document.removeEventListener('mousedown', handleMouseDown);
+        document.removeEventListener('mouseup', handleMouseUp);
+        document.removeEventListener('mousemove', handleMouseMove);
+      }, []);
+    
     useEffect(() => {
       const currentMount = mountRef.current;
   
-      // Scene setup
       const scene = new THREE.Scene();
-      const camera = new THREE.PerspectiveCamera(75, currentMount.clientWidth / currentMount.clientHeight, 0.1, 4000);
+      sceneRef.current = scene;
+      const camera = new THREE.PerspectiveCamera(75, currentMount.clientWidth / currentMount.clientHeight, 0.1, 2000);
+      cameraRef.current = camera;
       const renderer = new THREE.WebGLRenderer();
+      rendererRef.current = renderer;
       renderer.setSize(currentMount.clientWidth, currentMount.clientHeight);
       currentMount.appendChild(renderer.domElement);
+
   
       camera.position.z = 100;
   
@@ -871,7 +206,9 @@ const RandomBoxesScene = () => {
       directionalLight.position.set(1, 1, 1);
       scene.add(directionalLight);
   
-      const controls = new OrbitControls(camera, renderer.domElement);
+      // Controls setup
+  const orbitControls = new OrbitControls(camera, renderer.domElement);
+  orbitControlsRef.current = orbitControls;    
   
       const boxGeometry = new THREE.BoxGeometry(10, 10, 10);
       const materials = {
@@ -880,10 +217,12 @@ const RandomBoxesScene = () => {
       };
   
       const LOD_THRESHOLDS = {
-        HIGH: 50,  // Threshold for LOD1
-        LOW: 20,   // Threshold for LOD2
-        UNLOAD: 10 // Threshold for unloading (based on screen pixel ratio)
+        HIGH: 90,  // Threshold for LOD1
+        LOW: 60,   // Threshold for LOD2
+        UNLOAD: 25 // Threshold for unloading (based on screen pixel ratio)
       };
+  
+      const BUFFER_VOLUME_SIZE = 400; // Size of the buffer volume around the camera
   
       const frustum = new THREE.Frustum();
       const projScreenMatrix = new THREE.Matrix4();
@@ -907,94 +246,123 @@ const RandomBoxesScene = () => {
   
       const raycaster = new THREE.Raycaster();
   
-      function updateScene(updatedBoxes, totalBoxes) {
-        let loaded = 0;
-        let unloaded = 0;
-        let culled = 0;
-        let unculled = 0;
-        let lod1Count = 0;
-        let lod2Count = 0;
-        let smallSizeUnloaded = 0;
-  
-        camera.updateMatrixWorld();
-        projScreenMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
-        frustum.setFromProjectionMatrix(projScreenMatrix);
-  
-        updatedBoxes.forEach(boxData => {
-          const position = new THREE.Vector3(...boxData.position);
-          const inFrustum = frustum.containsPoint(position);
-  
-          if (inFrustum) {
-            if (boxData.screenSize >= LOD_THRESHOLDS.UNLOAD) {
-              let box = boxes.get(boxData.index);
-              if (!box) {
-                box = new THREE.Mesh(boxGeometry, materials.lod1);
-                boxes.set(boxData.index, box);
-                scene.add(box);
-                octree.insert(box);
-              }
-  
-              box.position.set(...boxData.position);
-              box.rotation.set(...boxData.rotation);
-  
-              // Determine LOD
-              if (boxData.screenSize >= LOD_THRESHOLDS.HIGH) {
-                box.material = materials.lod1;
-                lod1Count++;
-              } else {
-                box.material = materials.lod2;
-                lod2Count++;
-              }
-  
-              // Occlusion culling
-              raycaster.set(camera.position, position.sub(camera.position).normalize());
-              const intersects = raycaster.intersectObjects(scene.children, true);
-  
-              if (intersects.length > 0 && intersects[0].object !== box) {
-                box.visible = false;
-                culled++;
-              } else {
-                box.visible = true;
-                unculled++;
-              }
-  
-              loaded++;
-            } else {
-              // Box is in frustum but too small
-              smallSizeUnloaded++;
-              unloaded++;
-              const box = boxes.get(boxData.index);
-              if (box) {
-                scene.remove(box);
-                boxes.delete(boxData.index);
-              }
-            }
-          } else {
-            // Box is out of frustum
-            unloaded++;
-            const box = boxes.get(boxData.index);
-            if (box) {
-              scene.remove(box);
-              boxes.delete(boxData.index);
-            }
-          }
-        });
-  
-        setStats({
-          loaded,
-          unloaded,
-          culled,
-          unculled,
-          lod1: lod1Count,
-          lod2: lod2Count,
-          smallSizeUnloaded,
-          total: totalBoxes
-        });
+      function isInBufferVolume(position, cameraPosition) {
+        return position.distanceTo(cameraPosition) <= BUFFER_VOLUME_SIZE;
       }
+  
+     function updateScene(updatedBoxes, totalBoxes) {
+  let loaded = 0;
+  let unloaded = 0;
+  let culled = 0;
+  let unculled = 0;
+  let lod1Count = 0;
+  let lod2Count = 0;
+  let smallSizeUnloaded = 0;
+  let bufferVolumeOutsideFrustum = 0;
+  let inBufferZone = 0;
+  let inFrustum = 0;
+  let loadedToScene = 0;
+  let visibleBoxes = 0;
+  let hiddenBoxes = 0;
+  let occlusionCulled = 0;
+
+  camera.updateMatrixWorld();
+  projScreenMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+  frustum.setFromProjectionMatrix(projScreenMatrix);
+
+  updatedBoxes.forEach(boxData => {
+    const position = new THREE.Vector3(...boxData.position);
+    const inFrustumView = frustum.containsPoint(position);
+    const inBufferVolume = isInBufferVolume(position, camera.position);
+
+    if (inFrustumView || inBufferVolume) {
+      // Box is either in frustum or buffer zone, load it to the scene
+      let box = boxes.get(boxData.index);
+      if (!box) {
+        box = new THREE.Mesh(boxGeometry, materials.lod1);
+        boxes.set(boxData.index, box);
+        scene.add(box);
+        octree.insert(box);
+        loadedToScene++;
+      }
+
+      box.position.set(...boxData.position);
+      box.rotation.set(...boxData.rotation);
+
+      if (inFrustumView) {
+        inFrustum++;
+        if (boxData.screenSize >= LOD_THRESHOLDS.UNLOAD) {
+          // Determine LOD
+          if (boxData.screenSize >= LOD_THRESHOLDS.HIGH) {
+            box.material = materials.lod1;
+            lod1Count++;
+          } else {
+            box.material = materials.lod2;
+            lod2Count++;
+          }
+
+          // Occlusion culling
+          raycaster.set(camera.position, position.clone().sub(camera.position).normalize());
+          const intersects = raycaster.intersectObjects(scene.children, true);
+
+          if (intersects.length > 0 && intersects[0].object !== box) {
+            box.visible = false;
+            culled++;
+          } else {
+            box.visible = true;
+            visibleBoxes++;
+            unculled++;
+          }
+        } else {
+          // Box is in frustum but too small
+          box.visible = false;
+          hiddenBoxes++;
+          smallSizeUnloaded++;
+        }
+      } else {
+        // Box is in buffer zone but outside frustum
+        box.visible = false;
+        hiddenBoxes++;
+        bufferVolumeOutsideFrustum++;
+      }
+
+      loaded++;
+      if (inBufferVolume) inBufferZone++;
+    } else {
+      // Box is outside both frustum and buffer zone, unload it
+      unloaded++;
+      const box = boxes.get(boxData.index);
+      if (box) {
+        scene.remove(box);
+        boxes.delete(boxData.index);
+      }
+    }
+  });
+
+  setStats({
+    loaded,
+    unloaded,
+    culled,
+    unculled,
+    lod1: lod1Count,
+    lod2: lod2Count,
+    smallSizeUnloaded,
+    bufferVolumeOutsideFrustum,
+    inBufferZone,
+    inFrustum,
+    loadedToScene,
+    visibleBoxes,
+    hiddenBoxes,
+    occlusionCulled,
+    total: totalBoxes
+  });
+}
   
       function animate() {
         requestAnimationFrame(animate);
-        controls.update();
+        if (activeControls === 'orbit') {
+            orbitControls.update();
+          }
   
         worker.postMessage({
           type: 'update',
@@ -1009,33 +377,208 @@ const RandomBoxesScene = () => {
       animate();
   
       // Handle window resize
-      const handleResize = () => {
+    const handleResize = () => {
         camera.aspect = currentMount.clientWidth / currentMount.clientHeight;
         camera.updateProjectionMatrix();
         renderer.setSize(currentMount.clientWidth, currentMount.clientHeight);
       };
       window.addEventListener('resize', handleResize);
-  
       // Cleanup
       return () => {
         window.removeEventListener('resize', handleResize);
         currentMount.removeChild(renderer.domElement);
         worker.terminate();
+        orbitControls.dispose();
+
       };
     }, []);
+    let continueTranslation = false;
+    let continueRotation = false;
+    let translationDirection = 0;
+    let rotationDirection = 0;
+    let translationSpeed = 5; // Initial translation speed
+    let rotationSpeed = 0.001; // Initial rotation speed
+  // Define sensitivity constants
+    const horizontalSensitivity = 1.1; // Adjust as needed
+    const verticalSensitivity = 1.1; // Adjust as needed
+  
+    // mouse events functions on fly control
+  
+    const handleMouseDown = (event) => {
+        const mouseEvent = event.touches ? event.touches[0] : event;
+        if (mouseEvent.button === 0) { // Left mouse button pressed
+          isMouseDown.current = true;
+          mouse.current.x = mouseEvent.clientX;
+          mouse.current.y = mouseEvent.clientY;
+          isZooming.current = true;
+          continueTranslation = true; // Enable automatic translation
+          continueRotation = true; // Enable automatic rotation
+          translationDirection = lastMouseMovement.current.y > 0 ? 1 : -1; // Set translation direction based on last mouse movement
+          rotationDirection = lastMouseMovement.current.x > 0 ? 1 : -1; // Set rotation direction based on last mouse movement
+        } else if (mouseEvent.button === 1) { // Middle mouse button pressed
+          console.log("middlebutton pressed");
+          isPanning.current = true;
+          continueTranslation = true; // Enable automatic translation
+          mouse.current.x = mouseEvent.clientX;
+          mouse.current.y = mouseEvent.clientY;
+        }
+      };
+    
+      const handleMouseUp = () => {
+        isMouseDown.current = false;
+        isPanning.current = false;
+        isZooming.current = false;    
+        lastMouseMovement.current = { x: 0, y: 0 };
+        continueTranslation = false;
+        continueRotation = false;
+      };
+    
+      const handleMouseMove = (event) => {
+        event.preventDefault();
+    
+        const mouseEvent = event.touches ? event.touches[0] : event;
+        if (!isMouseDown.current && !isPanning.current && !isZooming.current) return;
+    
+        const movementX = mouseEvent.clientX - mouse.current.x;
+        const movementY = mouseEvent.clientY - mouse.current.y;
+    
+        lastMouseMovement.current = { x: movementX, y: movementY };
+        if (isMouseDown.current) { // Left mouse button clicked
+          const isHorizontal = Math.abs(movementX) > Math.abs(movementY);
+          if (isHorizontal) { // Horizontal movement, rotate around Y axis
+            continueCameraMovement(); 
+          } else { // Vertical movement, forward/backward
+            continueCameraMovement(); // Adjust with factors
+          }
+        } else if (isPanning.current) { // Middle mouse button clicked
+          continueCameraMovement(movementX, movementY); // Adjust with factors
+        }
+    
+        mouse.current.x = mouseEvent.clientX;
+        mouse.current.y = mouseEvent.clientY;
+      };
+    
+      const continueCameraMovement = () => {
+        const adjustedTranslationSpeed = flySpeed * translationSpeed;
+        if (isMouseDown.current && (continueTranslation || continueRotation)) {
+          requestAnimationFrame(continueCameraMovement);
+          const movementX = lastMouseMovement.current.x;
+          const movementY = lastMouseMovement.current.y;
+          const tileSizeFactor = 10; // Implement this function to calculate the factor based on tile size
+          const isHorizontal = Math.abs(movementX) > Math.abs(movementY);
+          if (isHorizontal) {
+            const rotationAngle = -movementX * rotationSpeed * horizontalSensitivity * flyrotationSpeed * tileSizeFactor;
+    
+            // Get the camera's up vector
+            let cameraUp = cameraRef.current.up.clone().normalize();
+            
+            // Create a quaternion representing the rotation around the camera's up vector
+            let quaternion = new THREE.Quaternion().setFromAxisAngle(cameraUp, rotationAngle);
+            
+            cameraRef.current.applyQuaternion(quaternion);
+          } else {
+            const zoomSpeed = movementY * 0.01; // Adjust zoom speed based on last recorded mouse movement
+    
+            const forwardDirection = new THREE.Vector3(0, 0, 1).applyQuaternion(cameraRef.current.quaternion);
+            // Move the camera forward/backward along its local forward direction
+            cameraRef.current.position.add(forwardDirection.multiplyScalar(zoomSpeed * adjustedTranslationSpeed * tileSizeFactor));
+          }			
+        } else if (isPanning.current && continueTranslation) {
+          requestAnimationFrame(continueCameraMovement);
+          const tileSizeFactor = 0.1;
+          const movementY = lastMouseMovement.current.y;
+          const movementX = lastMouseMovement.current.x;
+          const adjustedHorizontalSensitivity = horizontalSensitivity * tileSizeFactor;
+          const adjustedVerticalSensitivity = verticalSensitivity * tileSizeFactor;
+    
+          // Calculate movement speed based on mouse movement and sensitivity
+          const moveSpeedX = movementX * adjustedHorizontalSensitivity;
+          const moveSpeedY = movementY * adjustedVerticalSensitivity;
+          
+          const isHorizontal = Math.abs(movementX) > Math.abs(movementY);
+          const isVertical = Math.abs(movementY) > Math.abs(movementX);
+        
+          if (isHorizontal) {
+            // Move the camera along its local x axis
+            cameraRef.current.translateX(moveSpeedX);
+          } else if (isVertical) {
+            // Move the camera along its local y axis
+            cameraRef.current.translateY(-moveSpeedY);
+          }
+        }
+      };
+    
+
+    useEffect(() => {
+        if (activeControls === 'fly') {
+          orbitControlsRef.current.enabled = false;
+          enableFlyControls();
+        } else {
+          orbitControlsRef.current.enabled = true;
+          disableFlyControls();
+        }
+      }, [activeControls, enableFlyControls, disableFlyControls]);
+    
+      const switchToOrbitControls = useCallback(() => {
+        if (activeControls !== 'orbit') {
+          const camera = cameraRef.current;
+          const orbitControls = orbitControlsRef.current;
+          
+          // Store the current camera position and rotation
+          const position = camera.position.clone();
+          const quaternion = camera.quaternion.clone();
+          
+          setActiveControls('orbit');
+          
+          // After switching, restore the camera position and rotation
+          camera.position.copy(position);
+          camera.quaternion.copy(quaternion);
+          orbitControls.target.set(0, 0, 0); // Reset orbit controls target
+          orbitControls.update();
+        }
+      }, [activeControls]);
+    
+      const switchToFlyControls = useCallback(() => {
+        if (activeControls !== 'fly') {
+          const camera = cameraRef.current;
+          
+          // Store the current camera position and rotation
+          const position = camera.position.clone();
+          const quaternion = camera.quaternion.clone();
+          
+          setActiveControls('fly');
+          
+          // After switching, restore the camera position and rotation
+          camera.position.copy(position);
+          camera.quaternion.copy(quaternion);
+        }
+      }, [activeControls]);
   
     return (
-      <div>
+        <div>
         <div ref={mountRef} style={{ width: '100%', height: '100vh' }} />
         <div style={{ position: 'absolute', top: 10, left: 10, color: 'white', backgroundColor: 'rgba(0,0,0,0.5)', padding: '10px' }}>
           <div>Total Boxes: {stats.total}</div>
-          <div>Loaded: {stats.loaded}, Unloaded: {stats.unloaded}</div>
-          <div>Culled: {stats.culled}, Unculled: {stats.unculled}</div>
+          <div>Loaded boxes: {stats.loaded}</div>
+          <div>Unloaded boxes: {stats.unloaded}</div>
+          <div>Culled boxes: {stats.culled}</div>
+          <div>Unculled boxes: {stats.unculled}</div>
+          <div>Visible Boxes: {stats.visibleBoxes}</div>
+          <div>Hidden Boxes: {stats.hiddenBoxes}</div>
+          <div>In Frustum: {stats.inFrustum}</div>
           <div style={{ color: '#00ff00' }}>LOD1 (Near): {stats.lod1}</div>
           <div style={{ color: '#0000ff' }}>LOD2 (Far): {stats.lod2}</div>
-          <div style={{ color: '#ff9900' }}>Unloaded (Small Size): {stats.smallSizeUnloaded}</div>
-          <div>Total Visible: {stats.unculled}</div>
+          <div style={{ color: '#ff9900' }}>Small Size (Hidden): {stats.smallSizeUnloaded}</div>
+          <div style={{ color: '#ff00ff' }}>Buffer Volume (Outside Frustum): {stats.bufferVolumeOutsideFrustum}</div>
         </div>
+         <div style={{ position: 'absolute', bottom: 10, left: 10 }}>
+        <button onClick={switchToOrbitControls} disabled={activeControls === 'orbit'}>
+          Orbit Controls
+        </button>
+        <button onClick={switchToFlyControls} disabled={activeControls === 'fly'}>
+          Fly Controls
+        </button>
+      </div>
       </div>
     );
   };
