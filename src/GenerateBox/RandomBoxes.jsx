@@ -1,7 +1,6 @@
 import React, { useRef, useEffect, useState,useCallback } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
-import { FlyControls } from 'three/examples/jsm/controls/FlyControls';
 
 // Custom Octree implementation
 class Octree {
@@ -249,6 +248,7 @@ const workerCode = `
       function isInBufferVolume(position, cameraPosition) {
         return position.distanceTo(cameraPosition) <= BUFFER_VOLUME_SIZE;
       }
+
   
      function updateScene(updatedBoxes, totalBoxes) {
   let loaded = 0;
@@ -397,13 +397,20 @@ const workerCode = `
     let translationDirection = 0;
     let rotationDirection = 0;
     let translationSpeed = 5; // Initial translation speed
-    let rotationSpeed = 0.001; // Initial rotation speed
+    let rotationSpeed = 0.0001; // Initial rotation speed
   // Define sensitivity constants
     const horizontalSensitivity = 1.1; // Adjust as needed
     const verticalSensitivity = 1.1; // Adjust as needed
   
     // mouse events functions on fly control
-  
+    const handleMouseUp = () => {
+      isMouseDown.current = false;
+      isPanning.current = false;
+      isZooming.current = false;    
+      lastMouseMovement.current = { x: 0, y: 0 };
+      continueTranslation = false;
+      continueRotation = false;
+    };
     const handleMouseDown = (event) => {
         const mouseEvent = event.touches ? event.touches[0] : event;
         if (mouseEvent.button === 0) { // Left mouse button pressed
@@ -423,16 +430,7 @@ const workerCode = `
           mouse.current.y = mouseEvent.clientY;
         }
       };
-    
-      const handleMouseUp = () => {
-        isMouseDown.current = false;
-        isPanning.current = false;
-        isZooming.current = false;    
-        lastMouseMovement.current = { x: 0, y: 0 };
-        continueTranslation = false;
-        continueRotation = false;
-      };
-    
+     
       const handleMouseMove = (event) => {
         event.preventDefault();
     
@@ -578,6 +576,7 @@ const workerCode = `
         <button onClick={switchToFlyControls} disabled={activeControls === 'fly'}>
           Fly Controls
         </button>
+        
       </div>
       </div>
     );

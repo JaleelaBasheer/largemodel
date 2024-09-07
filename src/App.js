@@ -9,6 +9,8 @@ import MoreBoxes from './Largecomponent/MoreBoxes';
 import MultipleModelLoader from './LargefbxModels/ModalFBX';
 import FinalLargeScene from './Custom/LargeScene';
 import RandomBoxesScene from './GenerateBox/RandomBoxes';
+import RandomObjectsScene from './GenerateBox/RandomObjectScene';
+import Randomfbxfiles from './GenerateBox/Randomfbxfiles';
 
 function App() {
   return (
@@ -22,7 +24,9 @@ function App() {
       {/* <MoreBoxes/> */}
       {/* <MultipleModelLoader/> */}
       {/* <FinalLargeScene/> */}
-      <RandomBoxesScene/>
+      {/* <RandomBoxesScene/> */}
+      {/* <RandomObjectsScene/> */}
+      <Randomfbxfiles/>
 
 
     </div>
